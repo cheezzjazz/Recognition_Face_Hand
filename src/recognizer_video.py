@@ -141,7 +141,8 @@ while True:
                     print("Recognized: {} <{:.2f}>".format(name, proba*100))
                 # Start tracking
                 tracker = dlib.correlation_tracker()
-                rect = dlib.rectangle(, bbox[0], bbox[1], bbox[2], bbox[3])
+                tx0, ty0, tx1, ty1 = (bbox[0], bbox[1], bbox[2], bbox[3])
+                rect = dlib.rectangle(int(tx0), int(ty0), int(tx1), int(ty1))
                 tracker.start_track(rgb, rect)
                 trackers.append(tracker)
                 texts.append(text)
