@@ -1,5 +1,7 @@
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import LabelEncoder
+#200623
+from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import KFold
 from keras.models import load_model
 import matplotlib.pyplot as plt
@@ -29,8 +31,11 @@ le = LabelEncoder()
 labels = le.fit_transform(data["names"])
 num_classes = len(np.unique(labels))
 labels = labels.reshape(-1, 1)
-one_hot_encoder = OneHotEncoder(categorical_features = [0])
-labels = one_hot_encoder.fit_transform(labels).toarray()
+#one_hot_encoder = OneHotEncoder(categorical_features = [0])
+#200623
+ct = ColumnTransformer([("OneHot", OneHotEncoder(), [0])], remainder = 'passthrough')
+labels = ct.fit_transform(labels).toarray()
+#labels = one_hot_encoder.fit_transform(labels).toarray()
 
 embeddings = np.array(data["embeddings"])
 
@@ -45,7 +50,7 @@ model = softmax.build()
 
 # Create KFold
 cv = KFold(n_splits = 5, random_state = 42, shuffle=True)
-history = {'acc': [], 'val_acc': [], 'loss': [], 'val_loss': []}
+history = {'accuracy': [], 'val_accuracy': [], 'loss': [], 'val_loss': []}
 # Train
 for train_idx, valid_idx in cv.split(embeddings):
     X_train, X_val, y_train, y_val = embeddings[train_idx], embeddings[valid_idx], labels[train_idx], labels[valid_idx]
@@ -54,10 +59,10 @@ for train_idx, valid_idx in cv.split(embeddings):
                     epochs=EPOCHS,
                     verbose=1,
                     validation_data=(X_val, y_val))
-    print(his.history['acc'])
+    print(his.history['accuracy'])
 
-    history['acc'] += his.history['acc']
-    history['val_acc'] += his.history['val_acc']
+    history['accuracy'] += his.history['accuracy']
+    history['val_accuracy'] += his.history['val_accuracy']
     history['loss'] += his.history['loss']
     history['val_loss'] += his.history['val_loss']
 
@@ -72,8 +77,8 @@ f.close()
 plt.figure(1)
 # Summary history for accuracy
 plt.subplot(211)
-plt.plot(history['acc'])
-plt.plot(history['val_acc'])
+plt.plot(history['accuracy'])
+plt.plot(history['val_accuracy'])
 plt.title('model accuracy')
 plt.ylabel('accuracy')
 plt.xlabel('epoch')

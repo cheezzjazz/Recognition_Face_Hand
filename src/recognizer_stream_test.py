@@ -186,7 +186,7 @@ while True:
                 y = bbox[1] - 10 if bbox[1] - 10 > 10 else bbox[1] + 10
                 print("bbox : %.2f" %(bbox[0]))
                 print("y: %.2f" %(y))
-                cv2.putText(frame, text, (bbox[0], y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                cv2.putText(frame, text, (bbox[0], y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,0,0), 2)
         if points is not None:
             for point in points:
@@ -270,7 +270,7 @@ while True:
             endY = int(pos.bottom())
 
             cv2.rectangle(frame, (startX, startY), (endX, endY), (255,0,0), 2)
-            cv2.putText(frame, text, (startX, startY - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0,0,255),2)
+            cv2.putText(frame, text, (startX, startY - 15), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255),2)
         if points is not None:
             for point in points:
                 x, y = point
