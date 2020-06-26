@@ -49,10 +49,16 @@ args = ap.parse_args()
 
 # Load embeddings and labels
 data = pickle.loads(open(args.embeddings, "rb").read())
-le = pickle.loads(open(args.le, "rb").read())
+#le = pickle.loads(open(args.le, "rb").read())	#200625
 
 embeddings = np.array(data['embeddings'])
-labels = le.fit_transform(data['names'])
+print("first:{}".format(np.shape(embeddings)))
+labels = np.array(data['names'])        	#200625
+#labels = le.fit_transform(data['names'])	
+#labels = le.transform(data['names'])	        #200625
+
+indexNumber = 0
+#labels = np.array(data['names'])
 
 # Initialize detector
 detector = MTCNN()
@@ -63,6 +69,11 @@ embedding_model =face_model.FaceModel(args)
 # Load the classifier model
 model = load_model('outputs/my_model.h5')
 
+#200626 
+#def classify(vector1, vector2)
+#    vec1 = vector1.flatten()
+#    vec2 = vec2.flatten()
+#    return False
 # Define distance function
 def findCosineDistance(vector1, vector2):
     """
@@ -71,7 +82,7 @@ def findCosineDistance(vector1, vector2):
     vec1 = vector1.flatten()
     vec2 = vector2.flatten()
 
-    a = np.dot(vec1.T, vec2)
+    a = np.dot(vec1, vec2)    #200626   a = np.dot(vec1.T, vec2)
     b = np.dot(vec1.T, vec1)
     c = np.dot(vec2.T, vec2)
     return 1 - (a/(np.sqrt(b)*np.sqrt(c)))
@@ -81,12 +92,22 @@ def CosineSimilarity(test_vec, source_vecs):
     Verify the similarity of one vector to group vectors of one class
     """
     cos_dist = 0
+    curr = 0
+    minimum = 10
+    temp = -1
+    index = 0
     for source_vec in source_vecs:
-        cos_dist += findCosineDistance(test_vec, source_vec)
-    return cos_dist/len(source_vecs)
+        #cos_dist += findCosineDistance(test_vec, source_vec)
+        curr = findCosineDistance(test_vec, source_vec)
+        if curr < minimum :
+            temp = index
+            minimum = curr
+        cos_dist += curr
+        index += 1
+    return cos_dist/len(source_vecs), temp
 
 # Initialize some useful arguments
-cosine_threshold = 0.8
+cosine_threshold = 0.97 #0.8
 proba_threshold = 0.85
 comparing_num = 5
 trackers = []
@@ -104,7 +125,7 @@ frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
 save_width = 600
 save_height = int(600/frame_width*frame_height)
-video_out = cv2.VideoWriter(args.video_out, cv2.VideoWriter_fourcc('M','J','P','G'), 30, (save_width,save_height))
+#video_out = cv2.VideoWriter(args.video_out, cv2.VideoWriter_fourcc('M','J','P','G'), 30, (save_width,save_height))
 
 connections = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -123,6 +144,9 @@ detector1 = HandTracker(
     box_enlarge=1.3
 )
 
+previous_embedding = []
+new_labels = []
+new_embeddings = []
 while True:
     ret, frame = cap.read()
     frames += 1
@@ -156,24 +180,54 @@ while True:
                 embedding = embedding_model.get_feature(nimg).reshape(1,-1)
 
                 text = "Unknown"
+	
+                ### Predict class
+                #preds = model.predict(embedding)
+                #preds = preds.flatten()
 
-                # Predict class
-                preds = model.predict(embedding)
-                preds = preds.flatten()
-                # Get the highest accuracy embedded vector
-                j = np.argmax(preds)
-                proba = preds[j]
-                # Compare this vector to source class vectors to verify it is actual belong to this class
-                match_class_idx = (labels == j)
-                match_class_idx = np.where(match_class_idx)[0]
-                selected_idx = np.random.choice(match_class_idx, comparing_num)
-                compare_embeddings = embeddings[selected_idx]
+                ## Get the highest accuracy embedded vector
+                #j = np.argmax(preds)
+                #proba = preds[j]
+
+                ## Compare this vector to source class vectors to verify it is actual belong to this class
+                #match_class_idx = (labels == j)
+                #match_class_idx = np.where(match_class_idx)[0]
+                #selected_idx = np.random.choice(match_class_idx, comparing_num)
+                #compare_embeddings = embeddings[selected_idx]
+
                 # Calculate cosine similarity
-                cos_similarity = CosineSimilarity(embedding, compare_embeddings)
-                if cos_similarity < cosine_threshold and proba > proba_threshold:
-                    name = le.classes_[j]
+                cos_similarity, j = CosineSimilarity(embedding, embeddings)
+                print("Sim:{:.2f}, index:{}".format(cos_similarity,j))
+
+                if previous_embedding == []:
+                    previous_cos_similarity = cosine_threshold
+                    print("!!!first")
+                else:
+                    previous_cos_similarity, _ = CosineSimilarity(embedding, previous_embedding)
+                if cos_similarity < cosine_threshold: #and proba > proba_threshold:
+                    print("I know you and your name")                   
+                    #name = le.classes_[j]#200625
+                    name = labels[j]
+                    print("name : {}".format(name))
+                    #name = labels[j]
                     text = "{}".format(name)
-                    print("Recognized: {} <{:.2f}>".format(name, proba*100))
+                    #print("Recognized: {} <{:.2f}>".format(name, proba*100))
+                else:
+                    print("I don't know you")
+                    if previous_cos_similarity >= cosine_threshold:
+                        print("Unknown_new_face")
+                        text = "Person" + str(indexNumber)
+                        #new_embeddings.append(embedding)
+                        #new_labels.append(text + str(indexNumber))
+                        embeddings=np.concatenate((embeddings, embedding))
+                        labels=np.append(labels, text)
+                        indexNumber += 1
+                        previous_embedding.append(embedding)
+                        new_labels.append(text)
+                        new_embeddings.append(embedding)
+
+
+
                 # Start tracking
                 tracker = dlib.correlation_tracker()
                 tx0, ty0, tx1, ty1 = (bbox[0], bbox[1], bbox[2], bbox[3])
@@ -284,7 +338,7 @@ while True:
                 cv2.putText(frame, strCnt, (int(bbox[0]), int(y+5)), cv2.FONT_HERSHEY_SIMPLEX, 3, (255,0,255),2)
 
     cv2.imshow("Frame", frame)
-    video_out.write(frame)
+    # video_out.write(frame)
     # print("Faces detection time: {}s".format(detect_tock-detect_tick))
     # print("Faces recognition time: {}s".format(reco_tock-reco_tick))
     key = cv2.waitKey(1) & 0xFF
@@ -292,6 +346,12 @@ while True:
     if key == ord("q"):
         break
 
-video_out.release()
+# video_out.release()
 cap.release()
+#save to output
+print(np.shape(embeddings))
+new_data = {"embeddings": embeddings, "names": labels}
+f = open(args.embeddings, "wb")
+f.write(pickle.dumps(new_data))
+f.close()
 cv2.destroyAllWindows()
