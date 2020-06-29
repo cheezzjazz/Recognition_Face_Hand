@@ -42,7 +42,7 @@ class HandTracker():
         # reading tflite model paramteres
         output_details = self.interp_palm.get_output_details()
         input_details = self.interp_palm.get_input_details()
-
+        # print(input_details)
         self.in_idx = input_details[0]['index']
         self.out_reg_idx = output_details[0]['index']
         self.out_clf_idx = output_details[1]['index']
@@ -95,6 +95,7 @@ class HandTracker():
 
     @staticmethod
     def _sigm(x):
+        #print(x)
         return 1 / (1 + np.exp(-x) )
 
     @staticmethod
@@ -153,11 +154,14 @@ class HandTracker():
         box_ids = box_ids[0]
 
         # bounding box offsets, width and height
+        print("*********")
         dx,dy,w,h = candidate_detect[box_ids, :4]
+        # print(dx,dy)
         center_wo_offst = candidate_anchors[box_ids,:2] * 256
-
+        # print(center_wo_offst)
         # 7 initial keypoints
         keypoints = center_wo_offst + candidate_detect[box_ids,4:].reshape(-1,2)
+        # print(keypoints)
         side = max(w,h) * self.box_enlarge
 
         # now we need to move and rotate the detected hand for it to occupy a
@@ -166,7 +170,9 @@ class HandTracker():
         # should point straight up
         # TODO: replace triangle with the bbox directly
         source = self._get_triangle(keypoints[0], keypoints[2], side)
+        # print(source)
         source -= (keypoints[0] - keypoints[2]) * self.box_shift
+        # print(source)
 
         debug_info = {
             "detection_candidates": candidate_detect,
@@ -179,15 +185,22 @@ class HandTracker():
     def preprocess_img(self, img):
         # fit the image into a 256x256 square
         shape = np.r_[img.shape]
+        # print(shape)
+        # print(shape.max())
         pad = (shape.max() - shape[:2]).astype('uint32') // 2
+        #print(pad)
         img_pad = np.pad(
             img,
             ((pad[0],pad[0]), (pad[1],pad[1]), (0,0)),
             mode='constant')
+        # print(img_pad.shape)
         img_small = cv2.resize(img_pad, (256, 256))
+        # print(img_small)
         img_small = np.ascontiguousarray(img_small)
+        # print(img_small)
 
         img_norm = self._im_normalize(img_small)
+        #print(img_pad.shape)
         return img_pad, img_norm, pad
 
 
@@ -196,7 +209,7 @@ class HandTracker():
 
         source, keypoints, _ = self.detect_hand(img_norm)
         if source is None:
-            return None, None
+            return None, None, None
 
         # calculating transformation from img_pad coords
         # to img_landmark coords (cropped hand image)
@@ -220,8 +233,10 @@ class HandTracker():
 
         # projecting keypoints back into original image coordinate space
         kp_orig = (self._pad1(joints) @ Minv.T)[:,:2]
+        kp_land = (self._pad1(joints))[:, :2]
         box_orig = (self._target_box @ Minv.T)[:,:2]
         kp_orig -= pad[::-1]
         box_orig -= pad[::-1]
 
-        return kp_orig, box_orig
+
+        return kp_orig, kp_land, box_orig
