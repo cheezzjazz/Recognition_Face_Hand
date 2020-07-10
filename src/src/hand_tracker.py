@@ -1,5 +1,6 @@
 import csv
 import cv2
+import decimal
 import numpy as np
 import tensorflow as tf
 
@@ -23,7 +24,7 @@ class HandTracker():
         >>> input_img = np.random.randint(0,255, 256*256*3).reshape(256,256,3)
         >>> keypoints, bbox = det(input_img)
     """
-
+    
     def __init__(self, palm_model, joint_model, anchors_path,
                 box_enlarge=1.5, box_shift=0.2):
         self.box_shift = box_shift
@@ -134,7 +135,8 @@ class HandTracker():
         out_clf = self.interp_palm.get_tensor(self.out_clf_idx)[0,:,0]
 
         # finding the best prediction
-        probabilities = self._sigm(out_clf)
+        out_clf_new = out_clf.astype(np.float128)
+        probabilities = self._sigm(out_clf_new)
         detecion_mask = probabilities > 0.5
         candidate_detect = out_reg[detecion_mask]
         candidate_anchors = self.anchors[detecion_mask]
@@ -151,17 +153,22 @@ class HandTracker():
         box_ids = non_max_suppression_fast(moved_candidate_detect[:, :4], probabilities)
 
         # Pick the first detected hand. Could be adapted for multi hand recognition
-        box_ids = box_ids[0]
+        # box_ids = box_ids[0]
+
+        # Pick the closer hand from camera #200710
+        max_area = 0
+        for box_id in box_ids:
+            _,_,w,h = candidate_detect[box_id, :4]
+            if max_area < w*h:
+                max_area = w*h
+                maxbox_ids = box_id
+        box_ids = maxbox_ids  
 
         # bounding box offsets, width and height
-        print("*********")
         dx,dy,w,h = candidate_detect[box_ids, :4]
-        # print(dx,dy)
         center_wo_offst = candidate_anchors[box_ids,:2] * 256
-        # print(center_wo_offst)
         # 7 initial keypoints
         keypoints = center_wo_offst + candidate_detect[box_ids,4:].reshape(-1,2)
-        # print(keypoints)
         side = max(w,h) * self.box_enlarge
 
         # now we need to move and rotate the detected hand for it to occupy a
@@ -240,3 +247,40 @@ class HandTracker():
 
 
         return kp_orig, kp_land, box_orig
+
+    def getHandScore(self, draw_points, land_points):
+        counter = 0
+        if draw_points is not None:
+            
+            IsLefthand = False
+
+            if land_points[5][0] < land_points[17][0]:
+                IsLefthand = True
+            else:
+                IsLefthand = False
+
+            land2 = land_points[2][0]
+            land3 = land_points[3][0]
+            land4 = land_points[4][0]
+
+            if IsLefthand:
+                land2 *= -1.0
+                land3 *= -1.0
+                land4 *= -1.0
+            pseudoFixKeyPoint = land2
+            if pseudoFixKeyPoint < land3 and pseudoFixKeyPoint < land4:
+                counter += 1
+            pseudoFixKeyPoint = land_points[6][1]
+            if land_points[8][1] < land_points[7][1] < pseudoFixKeyPoint:
+                counter += 1
+            pseudoFixKeyPoint = land_points[10][1]
+            if land_points[12][1] < land_points[11][1] < pseudoFixKeyPoint:
+                counter += 1
+            pseudoFixKeyPoint = land_points[14][1]
+            if land_points[16][1] < land_points[15][1] < pseudoFixKeyPoint:
+                counter += 1
+            pseudoFixKeyPoint = land_points[18][1]
+            if land_points[20][1] < land_points[19][1] < pseudoFixKeyPoint:
+                counter += 1
+        
+        return counter
