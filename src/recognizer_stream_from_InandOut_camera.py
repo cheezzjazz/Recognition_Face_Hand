@@ -6,6 +6,7 @@ from keras.models import load_model
 from mtcnn.mtcnn import MTCNN
 from imutils import paths
 from openpyxl import Workbook
+from src.hand_tracker import HandTracker
 import face_preprocess
 import numpy as np
 import face_model
@@ -15,12 +16,10 @@ import time
 import dlib
 import cv2
 import os
-import threading
-from src.hand_tracker import HandTracker
 
 write_wb = Workbook()
 write_ws = write_wb.active
-write_ws.append(["Menu", "Name", "Score", "renew?", "new face?"])
+write_ws.append(["Menu", "Name", "Score", "renew?"])
 WINDOW = "Hand Tracking"
 PALM_MODEL_PATH = "models/palm_detection_without_custom_op.tflite"
 LANDMARK_MODEL_PATH = "models/hand_landmark.tflite"
@@ -117,9 +116,20 @@ def getMaxfacebox(bboxes):
             max_area = area
     return max_bbox[0:4], landmarks, max_area
 
+# Program to find most frequent element in a list 
+def most_frequent(List):
+    counter = 0
+    num = List[0]
+    for i in List:
+        curr_frequency = List.count(i)
+        if(curr_frequency > counter):
+            counter = curr_frequency
+            num = i
+    return num
+
 # Initialize some useful arguments
-cosine_threshold = 0.85
-proba_threshold = 0.85
+cosine_threshold = 1.45
+proba_threshold = 0.91
 dis_threshold = 0.4
 comparing_num = 5
 trackers = []
@@ -133,8 +143,8 @@ handScore = 0
 
 # Start streaming and recording
 rtsp = 'rtsp://admin:**graphics@163.152.162.189:554/cam/realmonitor?channel1&subtype=1'
-cap = cv2.VideoCapture(0)
-capIn = cv2.VideoCapture(1) #input camera
+cap = cv2.VideoCapture(1)
+capIn = cv2.VideoCapture(0) #input camera
 # ipcap = cv2.VideoCapture(0)
 # cv2.SetCaptureProperty(ipcap, CV_CAP_PROP_BUFFERSIZE, 5)
 # cap.set(cv2.cv.CV_CAP_PROP_FPS, 5)
@@ -171,18 +181,17 @@ max_bbox_In = np.zeros(4)
 max_bbox_Out = np.zeros(4)
 prev_name = None
 name = None
-score_number = []
-
-
+score_number = [] # all of hand scores
+score_number2 = [] # 3 frames continue scores
+when = 0
 while True:
     # ret is fading
     ret, frame = cap.read()
     _, frame_In = capIn.read()
     #ret, ipframe = ipcap.read()
     frames += 1
-    when = 0
-
-    if frames % 3 == 0:
+    
+    if frames % 5 == 0:
         rgb_In = cv2.cvtColor(frame_In, cv2.COLOR_BGR2RGB) #input camera
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         #frame = cv2.resize(frame, (save_width, save_height))
@@ -219,10 +228,13 @@ while True:
 
                 # Calculate cosine similarity
                 cos_similarity_In, j_In = CosineSimilarity(embedding_In, embeddings)
-                #print("cos_similarity:" + str(cos_similarity_In))
+                print("cos_similarity:" + str(cos_similarity_In))
                 if not previous_embedding:
                     previous_cos_similarity_In = cosine_threshold
+                    cosine_threshold = 0.8
+                    proba_threshold = 0.8
                 else:
+                    cosine_threshold = 0.9
                     previous_cos_similarity_In, _ = CosineSimilarity(embedding_In, previous_embedding)
 
                 if cos_similarity_In < cosine_threshold:
@@ -232,7 +244,7 @@ while True:
                     #print(cos_similarity_In)
                 else:
                     # print("I don't know you")
-                    if previous_cos_similarity_In >= cosine_threshold:
+                    if previous_cos_similarity_In >= proba_threshold:#cosine_threshold:
                         print("Unknown_new_face")
                         text_label = "Person" + str(indexNumber)
                         text_In += text_label
@@ -249,7 +261,7 @@ while True:
                         text_In = "{}".format(name)
                         #print("In - when=3")
                     #print(cos_similarity_In)
-                    #print(previous_cos_similarity_In)
+                    print(previous_cos_similarity_In)
 
                 # Start tracking
                 tracker = dlib.correlation_tracker()
@@ -294,7 +306,7 @@ while True:
 
                 # Calculate cosine similarity
                 cos_similarity, j = CosineSimilarity(embedding, embeddings)
-
+                print(cos_similarity)
                 if not previous_embedding:
                     previous_cos_similarity = cosine_threshold
                 else:
@@ -306,7 +318,8 @@ while True:
                     when = 1
                 else:
                     # print("I don't know you")
-                    if previous_cos_similarity >= cosine_threshold:
+                    print(previous_cos_similarity)
+                    if previous_cos_similarity >= proba_threshold:#cosine_threshold:
                         print("Unknown_new_face at Output camera")
                         name = None
                         when = 2
@@ -315,14 +328,14 @@ while True:
                         name = new_labels[k]
                         text = "{}".format(name)
                         when = 3
-
-                draw_points, points, hand_box = hand_detector(rgb)
-                #hand score
-                handScore = hand_detector.getHandScore(draw_points, points)
-                if name is not None and handScore != 0:
-                    strScore = "Hand Score : " + str(handScore)
-                    cnt.append(handScore)
-                    cv2.putText(frame, strScore, (int(10), int(25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                if name is not None:
+                    draw_points, points, hand_box = hand_detector(rgb)
+                    #hand score
+                    handScore = hand_detector.getHandScore(draw_points, points)
+                    if handScore != 0:
+                        strScore = "Hand Score : " + str(handScore)
+                        cnt.append(handScore)
+                        cv2.putText(frame, strScore, (int(10), int(25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                     if draw_points is not None:
                         #draw land mark
                         for point in draw_points:
@@ -368,7 +381,7 @@ while True:
 
                 cv2.rectangle(frame, (startX, startY), (endX, endY), FACEBOX_COLOR, 2)
                 cv2.putText(frame, text, (startX, startY - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255),2)
-                if draw_points is not None:
+                if text != "Unknown-" and draw_points is not None:
                     for point in draw_points:
                         x, y = point
                         cv2.circle(frame, (int(x), int(y)), THICKNESS * 2, POINT_COLOR, THICKNESS)
@@ -376,14 +389,16 @@ while True:
                         x0, y0 = draw_points[connection[0]]
                         x1, y1 = draw_points[connection[1]]
                         cv2.line(frame, (int(x0), int(y0)), (int(x1), int(y1)), CONNECTION_COLOR, THICKNESS)
-                if handScore != 0:
-                    strScore = "Hand Score : " + str(handScore)
-                    cv2.putText(frame, strScore, (int(10), int(25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255),2)
-        
+                    if handScore != 0:
+                        strScore = "Hand Score : " + str(handScore)
+                        cv2.putText(frame, strScore, (int(10), int(25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255),2)
+        print(name)
         cv2.namedWindow("Input_cam")
         cv2.namedWindow("Output_cam")
         cv2.moveWindow("Input_cam", 40, 30)
         cv2.moveWindow("Output_cam", 840, 30)
+        frame = cv2.resize(frame, (320, 240))
+        frame_In = cv2.resize(frame_In, (320, 240))
         cv2.imshow("Output_cam", frame)
         cv2.imshow("Input_cam", frame_In)
         # cv2.imshow("ipFrame", ipframe)
@@ -399,44 +414,62 @@ while True:
             if prev_name != name and prev_name is not None:
                 # write_ws.append([1, name, handScore])
                 id = len(score_number) - 1
+                print("id")
+                print(id)
                 if id >= 3:
-                    for x in range(3, id):
+                    score_number2 = [] #200711
+                    # find continuous scores
+                    for x in range(id, 2, -1): #range(3, id):
                         curr_score = score_number[x-1]
                         pre_score = score_number[x-2]
                         prepre_score = score_number[x-3]
-                        if curr_score == pre_score & pre_score == prepre_score:
-                            final_score = curr_score
-                            for i in range(2, write_ws.max_row + 1):
-                                if write_ws.cell(row=i, column=2).value == prev_name and write_ws.cell(row=i, column=4).value != "renew":
-                                    write_ws.cell(row=i, column=4).value = "renew"
-                            write_ws.append([1, prev_name, final_score])
-                            write_ws.cell(row=write_ws.max_row, column=5).value = when
-                            break
+                        if curr_score == pre_score == prepre_score:
+                            score_number2.append(curr_score) #200711
+                    # pick the most common score
+                    print(score_number2)
+                    if score_number2 :
+                        final_score = most_frequent(score_number2) #200711
+                        print(prev_name)
+                        print(final_score)
+                        write_ws.append([1, prev_name, final_score])
+                        for i in range(2, write_ws.max_row):
+                            if write_ws.cell(row=i, column=2).value == prev_name and write_ws.cell(row=i, column=4).value != "renew":
+                                write_ws.cell(row=i, column=4).value = "renew"
+                        
+                        # write_ws.cell(row=write_ws.max_row, column=5).value = when
 
                 first_score = score_number[id]
                 score_number = []
-                # print(score_number)
                 score_number.append(first_score)
-                # print(score_number)
             prev_name = name
         if key == ord("q"):
             break
 
-if name is not None and handScore != 0:
+#print(name)
+#print(score_number)
+if prev_name is not None and score_number :  #if name is not None and score_number != 0:
     id = len(score_number) - 1
+    #print("id")
+    #print(id)
     if id >= 3:
-        for x in range(3, id):
+        score_number2 = []  # 200711
+        for x in range(id, 2, -1): #range(3, id):
             curr_score = score_number[x-1]
             pre_score = score_number[x-2]
             prepre_score = score_number[x-3]
-            if curr_score == pre_score & pre_score == prepre_score:
-                final_score = curr_score
-                for i in range(2, write_ws.max_row + 1):
-                    if write_ws.cell(row=i, column=2).value == name and write_ws.cell(row=i, column=4).value != "renew":
-                        write_ws.cell(row=i, column=4).value = "renew"
-                write_ws.append([1, name, final_score])
-                write_ws.cell(row=write_ws.max_row, column=5).value = when
-                break
+            if curr_score == pre_score == prepre_score:
+                score_number2.append(curr_score)  # 200711
+        print(score_number2)
+        if score_number2 :
+            final_score = most_frequent(score_number2)  # 200711
+            print(prev_name)
+            print(final_score)
+            write_ws.append([1, prev_name, final_score])
+            for i in range(2, write_ws.max_row):
+                if write_ws.cell(row=i, column=2).value == prev_name and write_ws.cell(row=i, column=4).value != "renew":
+                    write_ws.cell(row=i, column=4).value = "renew"
+            #write_ws.cell(row=write_ws.max_row, column=5).value = when
+        
 #video_out.release()
 cap.release()
 # ipcap.release()
