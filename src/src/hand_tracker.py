@@ -166,10 +166,10 @@ class HandTracker():
 
         # bounding box offsets, width and height
         dx,dy,w,h = candidate_detect[box_ids, :4]
-        print(w*h)
+        #print(w*h)
         # If hand size is smaller than 300(area), No hands found
         if w*h < 300: 
-            print("No hands found-size:" + str(w*h))
+            #print("No hands found-size:" + str(w*h))
             return None, None, None
         center_wo_offst = candidate_anchors[box_ids,:2] * 256
         # 7 initial keypoints
